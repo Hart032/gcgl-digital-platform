@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase/client';
 
 interface CheckoutButtonProps {
   email: string;
@@ -29,6 +29,8 @@ interface Article {
   published_at: string;
 }
 
+const NAV_CATEGORIES = ['Politics', 'Business', 'World', 'Sports', 'Showbiz', 'GCGL TV / Video'];
+
 export default function Home() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'momo' | 'card'>('momo');
@@ -36,28 +38,51 @@ export default function Home() {
   const [plan, setPlan] = useState('monthly');
   const [email, setEmail] = useState('reader@gcgl.com.gh');
   const [articles, setArticles] = useState<Article[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [isLoadingArticles, setIsLoadingArticles] = useState(Boolean(supabase));
+  const [articleLoadError, setArticleLoadError] = useState(
+    supabase ? '' : 'News stories are unavailable because the database is not configured.'
+  );
 
   useEffect(() => {
+    let isActive = true;
+
     async function fetchArticles() {
       if (!supabase) {
         console.warn('Supabase is not configured.');
         return;
       }
 
-      const { data, error } = await supabase
-        .from('articles')
-        .select('*')
-        .eq('status', 'published')
-        .order('published_at', { ascending: false });
+      try {
+        const { data, error } = await supabase
+          .from('articles')
+          .select('*')
+          .eq('status', 'published')
+          .order('published_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching articles:', error.message);
-      } else if (data) {
-        setArticles(data);
+        if (!isActive) return;
+
+        if (error) {
+          console.error('Error fetching articles:', error.message);
+          setArticleLoadError('News stories could not be loaded. Please try again later.');
+        } else {
+          setArticles(data || []);
+          setArticleLoadError('');
+        }
+      } catch (error: unknown) {
+        console.error('Error fetching articles:', error);
+        setArticleLoadError('News stories could not be loaded. Please try again later.');
+      } finally {
+        if (isActive) setIsLoadingArticles(false);
       }
     }
 
-    fetchArticles();
+    void fetchArticles();
+
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   const closeModal = () => {
@@ -65,8 +90,17 @@ export default function Home() {
     setPhoneNumber('');
   };
 
-  const featuredArticle = articles.length > 0 ? articles[0] : null;
-  const secondaryArticles = articles.length > 1 ? articles.slice(1) : [];
+  const categoryOptions = Array.from(
+    new Set(articles.map((article) => article.category.trim()).filter(Boolean))
+  ).sort((first, second) => first.localeCompare(second));
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+  const filteredArticles = articles.filter((article) => {
+    const matchesCategory = selectedCategory === 'all' || article.category === selectedCategory;
+    const searchableText = `${article.title} ${article.category} ${article.content}`.toLocaleLowerCase();
+    return matchesCategory && (!normalizedQuery || searchableText.includes(normalizedQuery));
+  });
+  const featuredArticle = filteredArticles[0] ?? null;
+  const secondaryArticles = filteredArticles.slice(1);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-zinc-950 dark:text-zinc-100 relative" suppressHydrationWarning>
@@ -104,23 +138,95 @@ export default function Home() {
             Truth | Accuracy | Service — Supabase Powered Platform
           </p>
         </div>
-        <div className="flex justify-center space-x-6 overflow-x-auto border-t border-gray-100 py-3 text-sm font-semibold uppercase tracking-wider dark:border-zinc-800 dark:bg-zinc-900">
-          <a href="#" className="text-red-600">Home</a>
-          <a href="#" className="hover:text-red-600">Politics</a>
-          <a href="#" className="hover:text-red-600">Business</a>
-          <a href="#" className="hover:text-red-600">World</a>
-          <a href="#" className="hover:text-red-600">Sports</a>
-          <a href="#" className="hover:text-red-600">Showbiz</a>
-          <a href="#" className="hover:text-red-600">GCGL TV / Video</a>
+        <div className="flex justify-start gap-6 overflow-x-auto border-t border-gray-100 px-4 py-3 text-sm font-semibold uppercase tracking-wider md:justify-center dark:border-zinc-800 dark:bg-zinc-900">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedCategory('all');
+              setSearchQuery('');
+            }}
+            aria-pressed={selectedCategory === 'all'}
+            className={`shrink-0 ${selectedCategory === 'all' ? 'text-red-600' : 'hover:text-red-600'}`}
+          >
+            Home
+          </button>
+          {NAV_CATEGORIES.map((navCategory) => (
+            <button
+              key={navCategory}
+              type="button"
+              onClick={() => setSelectedCategory(navCategory)}
+              aria-pressed={selectedCategory === navCategory}
+              className={`shrink-0 ${selectedCategory === navCategory ? 'text-red-600' : 'hover:text-red-600'}`}
+            >
+              {navCategory}
+            </button>
+          ))}
         </div>
       </nav>
 
       {/* MAIN CONTENT GRID */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <section aria-label="Search and filter articles" className="mb-8 space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <label className="flex-1">
+              <span className="sr-only">Search articles</span>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search headlines, topics, or article text"
+                className="w-full rounded-md border border-gray-300 bg-white px-4 py-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+            </label>
+            <label>
+              <span className="sr-only">Filter by category</span>
+              <select
+                value={selectedCategory}
+                onChange={(event) => setSelectedCategory(event.target.value)}
+                className="w-full rounded-md border border-gray-300 bg-white px-4 py-3 text-sm sm:w-56 dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                <option value="all">All categories</option>
+                {categoryOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+            {(searchQuery || selectedCategory !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedCategory('all');
+                }}
+                className="rounded-md border border-gray-300 px-4 py-3 text-sm font-semibold hover:bg-gray-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-gray-500" aria-live="polite">
+            {isLoadingArticles
+              ? 'Loading published stories...'
+              : articleLoadError || `Showing ${filteredArticles.length} of ${articles.length} published stories`}
+          </p>
+        </section>
+
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           
           <div className="lg:col-span-2 space-y-8">
-            {featuredArticle ? (
+            {isLoadingArticles ? (
+              <div className="rounded-lg bg-white p-8 text-center shadow dark:bg-zinc-900">
+                <p className="text-sm text-gray-500">Loading published stories...</p>
+              </div>
+            ) : filteredArticles.length === 0 ? (
+              <div className="rounded-lg bg-white p-8 text-center shadow dark:bg-zinc-900">
+                <p className="text-sm text-gray-600 dark:text-zinc-400">
+                  {articleLoadError || (articles.length === 0
+                    ? 'No published stories are available yet.'
+                    : 'No stories match your search or category.')}
+                </p>
+              </div>
+            ) : featuredArticle ? (
               <article className="group cursor-pointer overflow-hidden rounded-lg bg-white shadow-md dark:bg-zinc-900 dark:border dark:border-zinc-800">
                 <div className="h-64 w-full bg-gray-300 dark:bg-zinc-800 flex items-center justify-center text-gray-500 font-medium">
                   {featuredArticle.image_url ? (
@@ -165,11 +271,7 @@ export default function Home() {
                   </div>
                 </div>
               </article>
-            ) : (
-              <div className="p-8 text-center bg-white rounded-lg shadow dark:bg-zinc-900">
-                <p className="text-sm text-gray-500">Loading live articles from Supabase database...</p>
-              </div>
-            )}
+            ) : null}
 
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               {secondaryArticles.map((art) => (
