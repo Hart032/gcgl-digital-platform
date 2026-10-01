@@ -1,53 +1,53 @@
 'use client';
 
-import { usePaystackPayment } from 'react-paystack';
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 
-// Define the structure of an article based on your Supabase table
+interface CheckoutButtonProps {
+  email: string;
+  amount: number;
+}
+
+// Fix ts(2769): Explicitly pass CheckoutButtonProps to dynamic import
+const CheckoutButton = dynamic<CheckoutButtonProps>(
+  () => import('@/app/components/CheckoutButton'),
+  {
+    ssr: false,
+    loading: () => <p className="text-sm text-gray-400">Loading secure checkout...</p>,
+  }
+);
+
 interface Article {
   id: string;
   title: string;
   category: string;
   content: string;
   image_url: string | null;
+  video_url: string | null;
   published_at: string;
 }
 
 export default function Home() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'momo' | 'card'>('momo');
-  const [checkoutStatus, setCheckoutStatus] = useState<'idle' | 'processing' | 'success'>('idle');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [plan, setPlan] = useState('monthly');
   const [email, setEmail] = useState('reader@gcgl.com.gh');
-
-  // State to hold articles fetched from Supabase
   const [articles, setArticles] = useState<Article[]>([]);
 
-  // Paystack configuration hook
-  const paystackConfig = {
-    reference: new Date().getTime().toString(),
-    email: email,
-    amount: plan === 'monthly' ? 5000 : 50000, // Amount in pesewas (GH₵ 50 = 5000 pesewas, GH₵ 500 = 50000 pesewas)
-    publicKey: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || 'pk_test_sample',
-    currency: 'GHS',
-  };
-
-  const initializePaystack = usePaystackPayment(paystackConfig);
-
-  // Fetch articles from Supabase when the page loads
   useEffect(() => {
     async function fetchArticles() {
       if (!supabase) {
-        console.warn('Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable live articles.');
+        console.warn('Supabase is not configured.');
         return;
       }
 
       const { data, error } = await supabase
         .from('articles')
         .select('*')
+        .eq('status', 'published')
         .order('published_at', { ascending: false });
 
       if (error) {
@@ -58,43 +58,25 @@ export default function Home() {
     }
 
     fetchArticles();
-  }, [setArticles]);
-
-  const handleCheckout = (e: React.FormEvent) => {
-    e.preventDefault();
-    setCheckoutStatus('processing');
-
-    // Trigger Paystack popup checkout
-    initializePaystack({
-      onSuccess: (reference: any) => {
-        console.log('Payment success:', reference);
-        setCheckoutStatus('success');
-      },
-      onClose: () => {
-        setCheckoutStatus('idle');
-      },
-    });
-  };
+  }, []);
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setCheckoutStatus('idle');
     setPhoneNumber('');
   };
 
-  // Separate featured article from the rest if available
   const featuredArticle = articles.length > 0 ? articles[0] : null;
   const secondaryArticles = articles.length > 1 ? articles.slice(1) : [];
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-zinc-950 dark:text-zinc-100 relative">
+    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-zinc-950 dark:text-zinc-100 relative" suppressHydrationWarning>
       
       {/* HEADER */}
       <header className="border-b border-gray-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center space-x-4">
             <span className="text-sm font-medium text-gray-500 dark:text-zinc-400">
-              Tuesday, September 29, 2026
+              Thursday, October 1, 2026
             </span>
             <span className="hidden rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 sm:inline-block dark:bg-red-950 dark:text-red-300">
               LIVE DATABASE CONNECTED
@@ -129,8 +111,7 @@ export default function Home() {
           <a href="#" className="hover:text-red-600">World</a>
           <a href="#" className="hover:text-red-600">Sports</a>
           <a href="#" className="hover:text-red-600">Showbiz</a>
-          <a href="#" className="hover:text-red-600">Mirror</a>
-          <a href="#" className="hover:text-red-600">Junior</a>
+          <a href="#" className="hover:text-red-600">GCGL TV / Video</a>
         </div>
       </nav>
 
@@ -139,7 +120,6 @@ export default function Home() {
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           
           <div className="lg:col-span-2 space-y-8">
-            {/* Featured Article from Supabase */}
             {featuredArticle ? (
               <article className="group cursor-pointer overflow-hidden rounded-lg bg-white shadow-md dark:bg-zinc-900 dark:border dark:border-zinc-800">
                 <div className="h-64 w-full bg-gray-300 dark:bg-zinc-800 flex items-center justify-center text-gray-500 font-medium">
@@ -165,8 +145,23 @@ export default function Home() {
                   <p className="mt-3 text-sm text-gray-600 dark:text-zinc-400">
                     {featuredArticle.content}
                   </p>
+
+                  {featuredArticle.video_url && (
+                    <div className="mt-4 aspect-video w-full overflow-hidden rounded-lg bg-black">
+                      <iframe
+                        src={featuredArticle.video_url.includes('watch?v=') 
+                          ? featuredArticle.video_url.replace('watch?v=', 'embed/') 
+                          : featuredArticle.video_url}
+                        title={featuredArticle.title}
+                        className="h-full w-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+                  )}
+
                   <div className="mt-4 flex items-center text-xs text-gray-500">
-                    <span>Published: {new Date(featuredArticle.published_at).toLocaleDateString()}</span>
+                    <span>Published: {featuredArticle.published_at ? new Date(featuredArticle.published_at).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : ''}</span>
                   </div>
                 </div>
               </article>
@@ -176,7 +171,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Secondary Articles List */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               {secondaryArticles.map((art) => (
                 <article key={art.id} className="group cursor-pointer rounded-lg bg-white p-4 shadow-sm dark:bg-zinc-900 dark:border dark:border-zinc-800">
@@ -190,7 +184,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Sidebar */}
           <aside className="space-y-6">
             <div className="rounded-lg bg-zinc-900 text-white p-6 shadow-md dark:bg-zinc-800">
               <h3 className="text-base font-bold">Get Full Digital Access</h3>
@@ -215,58 +208,50 @@ export default function Home() {
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-zinc-900 dark:border dark:border-zinc-800 relative">
             <button onClick={closeModal} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 font-bold">✕</button>
 
-            {checkoutStatus === 'success' ? (
-              <div className="text-center py-8 space-y-4">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-600 text-2xl font-bold">✓</div>
-                <h3 className="text-2xl font-bold">Subscription Successful!</h3>
-                <p className="text-sm text-gray-600 dark:text-zinc-400">Your payment has been processed securely via Paystack.</p>
-                <button onClick={closeModal} className="mt-4 w-full rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white">Return to Portal</button>
+            <div>
+              <h3 className="text-xl font-bold mb-4">Secure Digital Checkout</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase mb-1">Email Address</label>
+                  <input 
+                    type="email" 
+                    required 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    className="w-full rounded-lg border p-2.5 text-sm dark:bg-zinc-800 dark:border-zinc-700" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase mb-1">Choose Plan</label>
+                  <select value={plan} onChange={(e) => setPlan(e.target.value)} className="w-full rounded-lg border p-2.5 text-sm dark:bg-zinc-800 dark:border-zinc-700">
+                    <option value="monthly">Monthly Pass — GH₵ 50 / mo</option>
+                    <option value="annual">Annual Pass — GH₵ 500 / yr</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase mb-1">Payment Method</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setPaymentMethod('momo')} className={`py-2 text-xs font-semibold rounded-lg border ${paymentMethod === 'momo' ? 'border-red-600 bg-red-50 text-red-700 dark:bg-zinc-800' : ''}`}>Mobile Money</button>
+                    <button type="button" onClick={() => setPaymentMethod('card')} className={`py-2 text-xs font-semibold rounded-lg border ${paymentMethod === 'card' ? 'border-red-600 bg-red-50 text-red-700 dark:bg-zinc-800' : ''}`}>Card</button>
+                  </div>
+                </div>
+                {paymentMethod === 'momo' && (
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Mobile Money Number</label>
+                    <input type="text" required placeholder="e.g. 024XXXXXXX" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="w-full rounded-lg border p-2.5 text-sm dark:bg-zinc-800 dark:border-zinc-700" />
+                  </div>
+                )}
+                
+                <div className="pt-2">
+                  <CheckoutButton email={email} amount={plan === 'monthly' ? 50 : 500} />
+                </div>
               </div>
-            ) : (
-              <div>
-                <h3 className="text-xl font-bold">Secure Digital Checkout</h3>
-                <form onSubmit={handleCheckout} className="mt-6 space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold uppercase mb-1">Email Address</label>
-                    <input 
-                      type="email" 
-                      required 
-                      value={email} 
-                      onChange={(e) => setEmail(e.target.value)} 
-                      className="w-full rounded-lg border p-2.5 text-sm dark:bg-zinc-800 dark:border-zinc-700" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold uppercase mb-1">Choose Plan</label>
-                    <select value={plan} onChange={(e) => setPlan(e.target.value)} className="w-full rounded-lg border p-2.5 text-sm dark:bg-zinc-800 dark:border-zinc-700">
-                      <option value="monthly">Monthly Pass — GH₵ 50 / mo</option>
-                      <option value="annual">Annual Pass — GH₵ 500 / yr</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold uppercase mb-1">Payment Method</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button type="button" onClick={() => setPaymentMethod('momo')} className={`py-2 text-xs font-semibold rounded-lg border ${paymentMethod === 'momo' ? 'border-red-600 bg-red-50 text-red-700 dark:bg-zinc-800' : ''}`}>Mobile Money</button>
-                      <button type="button" onClick={() => setPaymentMethod('card')} className={`py-2 text-xs font-semibold rounded-lg border ${paymentMethod === 'card' ? 'border-red-600 bg-red-50 text-red-700 dark:bg-zinc-800' : ''}`}>Card</button>
-                    </div>
-                  </div>
-                  {paymentMethod === 'momo' && (
-                    <div>
-                      <label className="block text-xs font-medium mb-1">Mobile Money Number</label>
-                      <input type="text" required placeholder="e.g. 024XXXXXXX" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="w-full rounded-lg border p-2.5 text-sm dark:bg-zinc-800 dark:border-zinc-700" />
-                    </div>
-                  )}
-                  <button type="submit" disabled={checkoutStatus === 'processing'} className="mt-4 w-full rounded-lg bg-red-600 py-3 text-sm font-semibold text-white hover:bg-red-700 transition">
-                    {checkoutStatus === 'processing' ? 'Initializing Paystack...' : 'Complete Payment'}
-                  </button>
-                </form>
-              </div>
-            )}
+            </div>
+
           </div>
         </div>
       )}
 
-      {/* FOOTER */}
       <footer className="mt-12 border-t border-gray-200 bg-white py-8 text-center text-xs text-gray-500 dark:bg-zinc-900">
         <p>© 2026 Graphic Communications Group Limited. Powered by Supabase, Paystack & Next.js.</p>
       </footer>

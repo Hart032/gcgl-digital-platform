@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const hasValidSupabaseConfig =
-  typeof supabaseUrl === 'string' && /^https?:\/\//.test(supabaseUrl) && typeof supabaseAnonKey === 'string' && supabaseAnonKey.length > 0;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-export const supabase = hasValidSupabaseConfig
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+// Fallback warning if keys are missing
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('⚠️ Supabase environment variables are missing. Check your .env.local file.');
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
