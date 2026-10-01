@@ -1,7 +1,12 @@
-import { supabase } from '@/lib/supabase';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { hasEditorRole } from '@/lib/supabase';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import ArticleComments from '@/app/components/ArticleComments';
+import ArticlePaywall from '@/app/components/ArticlePaywall';
+import ArticleViewTracker from '@/app/components/ArticleViewTracker';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 interface PreviewPageProps {
   params: Promise<{
@@ -10,44 +15,50 @@ interface PreviewPageProps {
 }
 
 // Helper to resolve media URLs if stored as relative paths in buckets ('images/...' or 'videos/...')
-const getPublicMediaUrl = (pathOrUrl: string | null) => {
+const getPublicMediaUrl = (supabase: SupabaseClient, pathOrUrl: string | null) => {
   if (!pathOrUrl) return null;
   // If it's already a full URL (http/https or blob), return as is
   if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://') || pathOrUrl.startsWith('blob:')) {
     return pathOrUrl;
   }
   // Otherwise, fetch public URL from Supabase storage 'media' bucket
-  if (supabase) {
-    const { data } = supabase.storage.from('media').getPublicUrl(pathOrUrl);
-    return data.publicUrl;
-  }
-  return pathOrUrl;
+  const { data } = supabase.storage.from('media').getPublicUrl(pathOrUrl);
+  return data.publicUrl;
 };
 
 export default async function ArticlePreviewPage({ params }: PreviewPageProps) {
   const { id } = await params;
 
+  const supabase = await createSupabaseServerClient();
+
   if (!supabase) {
     return <div className="p-8 text-center text-red-600">Supabase is not configured.</div>;
   }
 
-  // Fetch the article from the 'articles' table regardless of status
-  const { data: article, error } = await supabase
+  const { data: claimsResult } = await supabase.auth.getClaims();
+  const isEditor = hasEditorRole(claimsResult ?? null);
+  let articleQuery = supabase
     .from('articles')
     .select('*')
-    .eq('id', id)
-    .single();
+    .eq('id', id);
+
+  if (!isEditor) {
+    articleQuery = articleQuery.eq('status', 'published');
+  }
+
+  const { data: article, error } = await articleQuery.single();
 
   if (error || !article) {
     notFound();
   }
 
-  const imageUrl = getPublicMediaUrl(article.image_url);
-  const videoUrl = getPublicMediaUrl(article.video_url);
+  const imageUrl = getPublicMediaUrl(supabase, article.image_url);
+  const videoUrl = getPublicMediaUrl(supabase, article.video_url);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-zinc-950 dark:text-zinc-100 py-10 px-4">
       <div className="max-w-3xl mx-auto space-y-6">
+        {article.status === 'published' && <ArticleViewTracker articleId={article.id} />}
         
         {/* Editorial Notice Banner */}
         <div className="bg-amber-100 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-700 p-4 rounded-xl flex justify-between items-center text-amber-900 dark:text-amber-200 text-xs font-semibold">
@@ -101,11 +112,12 @@ export default async function ArticlePreviewPage({ params }: PreviewPageProps) {
             </div>
           )}
 
-          <div className="prose dark:prose-invert max-w-none pt-4 whitespace-pre-wrap leading-relaxed">
-            {article.content}
+          <div className="pt-4">
+            <ArticlePaywall content={article.content} title={article.title} />
           </div>
         </div>
 
+        <ArticleComments articleId={article.id} />
       </div>
     </div>
   );

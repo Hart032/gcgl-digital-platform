@@ -1,7 +1,8 @@
 'use client';
 
 import React, { startTransition, useCallback, useState, useEffect, useRef } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase/client';
+import { hasAdminRole, hasEditorRole, isSupabaseConfigured } from '@/lib/supabase';
 import Link from 'next/link';
 
 interface Article {
@@ -27,6 +28,13 @@ const DEFAULT_CATEGORIES = [
 export default function AdminPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [adminAccess, setAdminAccess] = useState<'checking' | 'signed-out' | 'admin' | 'editor' | 'denied' | 'unconfigured'>(
+    isSupabaseConfigured ? 'checking' : 'unconfigured'
+  );
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
 
   const [title, setTitle] = useState('');
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
@@ -70,10 +78,48 @@ export default function AdminPage() {
     return data || [];
   }, []);
 
-  // Fetch articles and load custom categories from localStorage on mount
+  // Restore auth state before loading private editorial data.
   useEffect(() => {
-    let isActive = true;
+    if (!supabase) return;
 
+    let isActive = true;
+    const setAccessFromUser = (user: { app_metadata?: Record<string, unknown> } | null) => {
+      if (!isActive) return;
+      setAdminAccess(!user ? 'signed-out' : hasAdminRole(user) ? 'admin' : hasEditorRole(user) ? 'editor' : 'denied');
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAccessFromUser(session?.user ?? null);
+    });
+
+    void supabase.auth.getUser()
+      .then(({ data, error }) => {
+        if (error) {
+          if (error.message !== 'Auth session missing!') {
+            console.error('Error checking editor session:', error.message);
+          }
+          setAccessFromUser(null);
+          return;
+        }
+        setAccessFromUser(data.user);
+      })
+      .catch((error: unknown) => {
+        if (error && typeof error === 'object' && 'message' in error && error.message !== 'Auth session missing!') {
+          console.error('Error checking editor session:', error.message);
+        }
+        setAccessFromUser(null);
+      });
+
+    return () => {
+      isActive = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (adminAccess !== 'admin' && adminAccess !== 'editor') return;
+
+    let isActive = true;
     void fetchArticles()
       .then((data) => {
         if (!isActive) return;
@@ -89,17 +135,18 @@ export default function AdminPage() {
     if (savedCategories) {
       try {
         const parsed = JSON.parse(savedCategories);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((item) => typeof item === 'string')) {
           startTransition(() => setCategories(parsed));
         }
       } catch (e) {
         console.error('Error loading custom categories', e);
       }
     }
+
     return () => {
       isActive = false;
     };
-  }, [fetchArticles]);
+  }, [adminAccess, fetchArticles]);
 
   const refreshArticles = async () => {
     setFetchingArticles(true);
@@ -375,6 +422,109 @@ export default function AdminPage() {
     }
   };
 
+  const handleSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!supabase) {
+      setAdminAccess('unconfigured');
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthMessage('');
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: loginEmail,
+      password: loginPassword,
+    });
+
+    if (error) {
+      setAuthMessage(error.message);
+      setAdminAccess('signed-out');
+    } else if (!hasEditorRole(data.user)) {
+      await supabase.auth.signOut();
+      setAuthMessage('This account does not have administrative access.');
+      setAdminAccess('signed-out');
+    } else {
+      setLoginPassword('');
+      setAdminAccess(hasAdminRole(data.user) ? 'admin' : 'editor');
+    }
+    setAuthLoading(false);
+  };
+
+  const handleSignOut = async () => {
+    if (!supabase) return;
+    const { error } = await supabase.auth.signOut();
+    if (error) setAuthMessage('Unable to sign out. Please try again.');
+    setAdminAccess('signed-out');
+  };
+
+  if (adminAccess !== 'admin' && adminAccess !== 'editor') {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-10 text-gray-900 dark:bg-zinc-950 dark:text-zinc-100">
+        <section className="w-full max-w-md space-y-5 rounded-lg border border-gray-200 bg-white p-7 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div>
+            <p className="text-xs font-semibold uppercase text-red-600">GCGL Editorial</p>
+            <h1 className="mt-1 text-2xl font-bold">Administrator sign in</h1>
+            <p className="mt-2 text-sm text-gray-500 dark:text-zinc-400">
+              Sign in with an account assigned the administrator or legacy editor role.
+            </p>
+          </div>
+
+          {adminAccess === 'checking' ? (
+            <p className="text-sm text-gray-500">Checking your session...</p>
+          ) : adminAccess === 'unconfigured' ? (
+            <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, then restart the app.
+            </p>
+          ) : adminAccess === 'denied' ? (
+            <div className="space-y-3">
+              <p className="text-sm text-red-600">This account is not authorized to manage articles.</p>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-sm font-semibold hover:bg-gray-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleSignIn} className="space-y-4">
+              <label className="block text-sm font-medium">
+                Email
+                <input
+                  type="email"
+                  autoComplete="username"
+                  required
+                  value={loginEmail}
+                  onChange={(event) => setLoginEmail(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2.5 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+              </label>
+              <label className="block text-sm font-medium">
+                Password
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={loginPassword}
+                  onChange={(event) => setLoginPassword(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2.5 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+              </label>
+              {authMessage && <p role="alert" className="text-sm text-red-600">{authMessage}</p>}
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full rounded-md bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {authLoading ? 'Signing in...' : 'Sign in'}
+              </button>
+            </form>
+          )}
+        </section>
+      </main>
+    );
+  }
+
   const filteredArticles = articles.filter(
     (art) =>
       art.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -407,9 +557,23 @@ export default function AdminPage() {
             <h1 className="text-2xl font-bold font-serif text-red-600">GCGL Admin Portal</h1>
             <p className="text-xs text-gray-500">Publish news, images, and video reports with storage uploads</p>
           </div>
-          <Link href="/" className="text-xs font-semibold bg-gray-200 dark:bg-zinc-800 px-3 py-1.5 rounded hover:bg-gray-300 transition">
-            View Live Site →
-          </Link>
+          <div className="flex items-center gap-2">
+            {adminAccess === 'admin' && (
+              <Link href="/admin/epaper" className="text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200 px-3 py-1.5 rounded hover:bg-red-200 dark:hover:bg-red-900 transition">
+                E-Paper Issues
+              </Link>
+            )}
+            <Link href="/" className="text-xs font-semibold bg-gray-200 dark:bg-zinc-800 px-3 py-1.5 rounded hover:bg-gray-300 transition">
+              View Live Site →
+            </Link>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="text-xs font-semibold border border-gray-300 dark:border-zinc-700 px-3 py-1.5 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
 
         {/* Analytics Counter Dashboard */}

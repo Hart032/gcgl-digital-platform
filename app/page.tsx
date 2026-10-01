@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
+import BreakingNewsTicker from '@/app/components/BreakingNewsTicker';
+import TrendingStories from '@/app/components/TrendingStories';
 import { supabase } from '@/lib/supabase/client';
 
 interface CheckoutButtonProps {
@@ -31,7 +34,22 @@ interface Article {
 
 const NAV_CATEGORIES = ['Politics', 'Business', 'World', 'Sports', 'Showbiz', 'GCGL TV / Video'];
 
+const getInitialTheme = (): 'light' | 'dark' => {
+  if (typeof window === 'undefined') return 'light';
+
+  const storedTheme = localStorage.getItem('gcgl-theme');
+  if (storedTheme === 'dark' || storedTheme === 'light') {
+    return storedTheme;
+  }
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
+
 export default function Home() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
+  const [newsletterEmail, setNewsletterEmail] = useState('');
+  const [newsletterMessage, setNewsletterMessage] = useState('');
+  const [newsletterStatus, setNewsletterStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'momo' | 'card'>('momo');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -44,6 +62,11 @@ export default function Home() {
   const [articleLoadError, setArticleLoadError] = useState(
     supabase ? '' : 'News stories are unavailable because the database is not configured.'
   );
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    localStorage.setItem('gcgl-theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     let isActive = true;
@@ -90,6 +113,45 @@ export default function Home() {
     setPhoneNumber('');
   };
 
+  const handleNewsletterSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedEmail = newsletterEmail.trim();
+
+    if (!trimmedEmail) {
+      setNewsletterStatus('error');
+      setNewsletterMessage('Please enter a valid email address.');
+      return;
+    }
+
+    setNewsletterStatus('loading');
+    setNewsletterMessage('');
+
+    try {
+      const response = await fetch('/api/newsletter', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: trimmedEmail }),
+      });
+
+      const payload = (await response.json()) as { message?: string; error?: string };
+
+      if (!response.ok) {
+        setNewsletterStatus('error');
+        setNewsletterMessage(payload.error || 'We could not save your subscription right now.');
+        return;
+      }
+
+      setNewsletterStatus('success');
+      setNewsletterMessage(payload.message || 'Thanks for joining! Your daily digest signup is confirmed.');
+      setNewsletterEmail('');
+    } catch (error) {
+      setNewsletterStatus('error');
+      setNewsletterMessage(error instanceof Error ? error.message : 'We could not process your signup.');
+    }
+  };
+
   const categoryOptions = Array.from(
     new Set(articles.map((article) => article.category.trim()).filter(Boolean))
   ).sort((first, second) => first.localeCompare(second));
@@ -116,8 +178,17 @@ export default function Home() {
               LIVE DATABASE CONNECTED
             </span>
           </div>
-          <div className="flex items-center space-x-4 text-sm font-medium">
-            <a href="#" className="hover:text-red-600">E-Paper</a>
+          <div className="flex items-center gap-3 text-sm font-medium">
+            <Link href="/epaper" className="hover:text-red-600">E-Paper</Link>
+            <Link href="/dashboard" className="hover:text-red-600">Dashboard</Link>
+            <button
+              type="button"
+              aria-label="Toggle dark mode"
+              onClick={() => setTheme((currentTheme) => (currentTheme === 'dark' ? 'light' : 'dark'))}
+              className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+            >
+              {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+            </button>
             <button 
               onClick={() => setIsModalOpen(true)}
               className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-red-700 transition"
@@ -166,6 +237,8 @@ export default function Home() {
 
       {/* MAIN CONTENT GRID */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <BreakingNewsTicker />
+
         <section aria-label="Search and filter articles" className="mb-8 space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row">
             <label className="flex-1">
@@ -211,6 +284,42 @@ export default function Home() {
           </p>
         </section>
 
+        <section className="mb-8 rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 via-white to-red-50 p-6 shadow-sm dark:border-red-900/70 dark:from-zinc-900 dark:via-zinc-950 dark:to-zinc-900">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-600">Daily digest</p>
+              <h2 className="mt-2 text-2xl font-bold">Join the GCGL newsletter</h2>
+              <p className="mt-2 text-sm text-gray-600 dark:text-zinc-400">
+                Get the top stories, analysis, and curated updates delivered to your inbox each morning.
+              </p>
+            </div>
+
+            <form onSubmit={handleNewsletterSubmit} className="flex w-full max-w-xl flex-col gap-3 sm:flex-row">
+              <input
+                type="email"
+                value={newsletterEmail}
+                onChange={(event) => setNewsletterEmail(event.target.value)}
+                placeholder="Your email address"
+                className="w-full rounded-md border border-gray-300 bg-white px-4 py-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                aria-label="Email address"
+              />
+              <button
+                type="submit"
+                disabled={newsletterStatus === 'loading'}
+                className="rounded-md bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {newsletterStatus === 'loading' ? 'Joining...' : 'Join newsletter'}
+              </button>
+            </form>
+          </div>
+
+          {newsletterMessage && (
+            <p className={`mt-4 text-sm ${newsletterStatus === 'success' ? 'text-green-700 dark:text-green-300' : 'text-red-600'}`}>
+              {newsletterMessage}
+            </p>
+          )}
+        </section>
+
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           
           <div className="lg:col-span-2 space-y-8">
@@ -227,7 +336,7 @@ export default function Home() {
                 </p>
               </div>
             ) : featuredArticle ? (
-              <article className="group cursor-pointer overflow-hidden rounded-lg bg-white shadow-md dark:bg-zinc-900 dark:border dark:border-zinc-800">
+              <Link href={`/articles/preview/${featuredArticle.id}`} className="group block overflow-hidden rounded-lg bg-white shadow-md dark:bg-zinc-900 dark:border dark:border-zinc-800">
                 <div className="h-64 w-full bg-gray-300 dark:bg-zinc-800 flex items-center justify-center text-gray-500 font-medium">
                   {featuredArticle.image_url ? (
                     <Image
@@ -270,23 +379,24 @@ export default function Home() {
                     <span>Published: {featuredArticle.published_at ? new Date(featuredArticle.published_at).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : ''}</span>
                   </div>
                 </div>
-              </article>
+              </Link>
             ) : null}
 
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               {secondaryArticles.map((art) => (
-                <article key={art.id} className="group cursor-pointer rounded-lg bg-white p-4 shadow-sm dark:bg-zinc-900 dark:border dark:border-zinc-800">
+                <Link key={art.id} href={`/articles/preview/${art.id}`} className="group block rounded-lg bg-white p-4 shadow-sm dark:bg-zinc-900 dark:border dark:border-zinc-800">
                   <span className="text-xs font-semibold text-blue-600 uppercase">{art.category}</span>
                   <h3 className="mt-1 font-bold group-hover:text-red-600 text-sm">
                     {art.title}
                   </h3>
                   <p className="mt-2 text-xs text-gray-500 line-clamp-2">{art.content}</p>
-                </article>
+                </Link>
               ))}
             </div>
           </div>
 
           <aside className="space-y-6">
+            <TrendingStories />
             <div className="rounded-lg bg-zinc-900 text-white p-6 shadow-md dark:bg-zinc-800">
               <h3 className="text-base font-bold">Get Full Digital Access</h3>
               <p className="mt-2 text-xs text-zinc-300">
