@@ -6,6 +6,7 @@ import Image from 'next/image';
 import ArticleComments from '@/app/components/ArticleComments';
 import ArticlePaywall from '@/app/components/ArticlePaywall';
 import ArticleViewTracker from '@/app/components/ArticleViewTracker';
+import VideoPost from '@/app/components/VideoPost';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 interface PreviewPageProps {
@@ -106,11 +107,7 @@ export default async function ArticlePreviewPage({ params }: PreviewPageProps) {
           )}
 
           {/* Video from media bucket */}
-          {videoUrl && (
-            <div className="rounded-xl overflow-hidden my-4 bg-black p-2">
-              <video src={videoUrl} controls className="w-full rounded-lg max-h-[400px]" />
-            </div>
-          )}
+          {videoUrl && <VideoPost src={videoUrl} title={article.title} provider={article.video_provider} />}
 
           <div className="pt-4">
             <ArticlePaywall content={article.content} title={article.title} />

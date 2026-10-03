@@ -62,6 +62,7 @@ export default function UserDashboardPage() {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [region, setRegion] = useState('');
+  const [membershipTier, setMembershipTier] = useState<string | null>(null);
   const [plan, setPlan] = useState('Premium Monthly');
   const [status, setStatus] = useState<SubscriptionStatus>('inactive');
   const [nextRenewalAt, setNextRenewalAt] = useState<string | null>(null);
@@ -71,7 +72,7 @@ export default function UserDashboardPage() {
     const response = await fetch('/api/profile', { cache: 'no-store' });
     const payload = await response.json() as {
       error?: string;
-      profile?: { full_name?: string; phone?: string; region?: string } | null;
+      profile?: { full_name?: string; phone?: string; region?: string; membership_tier?: string | null } | null;
       subscription?: { plan?: string; status?: string; next_renewal_at?: string | null } | null;
     };
 
@@ -80,6 +81,7 @@ export default function UserDashboardPage() {
     setFullName(payload.profile?.full_name || '');
     setPhone(payload.profile?.phone || '');
     setRegion(payload.profile?.region || '');
+    setMembershipTier(payload.profile?.membership_tier ?? null);
     setPlan(payload.subscription?.plan || 'Premium Monthly');
     setStatus((payload.subscription?.status as SubscriptionStatus) || 'inactive');
     setNextRenewalAt(payload.subscription?.next_renewal_at || null);
@@ -218,6 +220,7 @@ export default function UserDashboardPage() {
     setFullName('Ama Mensah');
     setPhone('+233 24 000 0000');
     setRegion('Greater Accra');
+    setMembershipTier('Gold');
     setPlan('Premium Monthly');
     setStatus('active');
     setNextRenewalAt('2026-10-10T00:00:00.000Z');
@@ -392,7 +395,7 @@ export default function UserDashboardPage() {
 
           <article className="group rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
             <p className="text-xs font-bold uppercase tracking-[0.12em] text-gray-500 dark:text-zinc-400">Membership</p>
-            <p className="mt-3 font-serif text-2xl font-bold text-red-700 dark:text-red-400">{status === 'active' ? plan.replace(/ (Monthly|Annual)$/, '') : 'No active plan'}</p>
+            <p className="mt-3 font-serif text-2xl font-bold text-red-700 dark:text-red-400">{membershipTier ?? (status === 'active' ? plan.replace(/ (Monthly|Annual)$/, '') : 'No active plan')}</p>
             <p className="mt-1 text-sm text-gray-500 dark:text-zinc-400">{status === 'active' ? 'Full digital access' : 'Contact support to manage access'}</p>
           </article>
 

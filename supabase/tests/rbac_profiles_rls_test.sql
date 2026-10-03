@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(17);
+SELECT plan(20);
 
 INSERT INTO auth.users (id, email, raw_app_meta_data, raw_user_meta_data)
 VALUES
@@ -7,6 +7,9 @@ VALUES
 	('22222222-2222-4222-8222-222222222222', 'rbac-member@example.test', '{}', '{"full_name":"RBAC Member"}'),
 	('44444444-4444-4444-8444-444444444444', 'rbac-editor@example.test', '{"role":"editor"}', '{"full_name":"RBAC Editor"}'),
 	('33333333-3333-4333-8333-333333333333', 'rbac-other@example.test', '{}', '{"full_name":"Other Member"}');
+
+INSERT INTO public.articles (title, category, content, published_at, status)
+VALUES ('RBAC editor-delete fixture', 'Testing', 'RBAC fixture', now(), 'draft');
 
 SELECT is(
 	(SELECT raw_app_meta_data ->> 'role' FROM auth.users WHERE id = '22222222-2222-4222-8222-222222222222'),
@@ -78,10 +81,26 @@ SELECT is_empty(
 	$$UPDATE public.subscriptions SET status = 'active' WHERE user_id = '22222222-2222-4222-8222-222222222222' RETURNING status$$,
 	'editors cannot manage subscriptions'
 );
+SELECT is_empty(
+	$$DELETE FROM public.articles WHERE title = 'RBAC editor-delete fixture' RETURNING id$$,
+	'editors cannot delete articles'
+);
+SELECT throws_ok(
+	$$INSERT INTO public.brand_ads (brand, placement, headline, image_url, target_url, alt_text, created_by)
+	  VALUES ('Daily Graphic', 'story_feed', 'Editor ad', 'https://example.com/ad.jpg', 'https://example.com', 'Ad image', '44444444-4444-4444-8444-444444444444')$$,
+	'42501',
+	NULL,
+	'editors cannot create or manage ad campaigns'
+);
 
 SET LOCAL request.jwt.claim.sub = '11111111-1111-4111-8111-111111111111';
 SET LOCAL request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","app_metadata":{"role":"admin"}}';
 
+SELECT lives_ok(
+	$$INSERT INTO public.brand_ads (brand, placement, headline, image_url, target_url, alt_text, created_by)
+	  VALUES ('Daily Graphic', 'story_feed', 'Admin ad', 'https://example.com/ad.jpg', 'https://example.com', 'Ad image', '11111111-1111-4111-8111-111111111111')$$,
+	'superadmins can create ad campaigns'
+);
 SELECT is(
 	(SELECT count(*)::integer FROM public.profiles WHERE user_id IN ('22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333')),
 	2,

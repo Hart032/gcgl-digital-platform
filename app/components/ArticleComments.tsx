@@ -22,6 +22,7 @@ export default function ArticleComments({ articleId }: ArticleCommentsProps) {
   const [loading, setLoading] = useState(Boolean(supabase));
   const [submitting, setSubmitting] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
+  const [loadMessage, setLoadMessage] = useState('');
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [displayName, setDisplayName] = useState('Reader');
 
@@ -56,7 +57,10 @@ export default function ArticleComments({ articleId }: ArticleCommentsProps) {
         .order('created_at', { ascending: true });
 
       if (isMounted) {
-        if (!error) {
+        if (error) {
+          console.error('Unable to load article comments:', error.message);
+          setLoadMessage('Comments could not be loaded. Please try again later.');
+        } else {
           setComments((data as CommentRow[]) ?? []);
         }
         setLoading(false);
@@ -172,7 +176,9 @@ export default function ArticleComments({ articleId }: ArticleCommentsProps) {
       )}
 
       <div className="space-y-4">
-        {loading ? (
+        {loadMessage ? (
+          <p role="alert" className="text-sm text-red-600">{loadMessage}</p>
+        ) : loading ? (
           <p className="text-sm text-gray-500">Loading comments...</p>
         ) : comments.length === 0 ? (
           <p className="text-sm text-gray-500">Be the first to share a comment on this article.</p>

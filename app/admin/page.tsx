@@ -2,8 +2,12 @@
 
 import React, { startTransition, useCallback, useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase/client';
-import { hasAdminRole, hasEditorRole, isSupabaseConfigured } from '@/lib/supabase';
+import { hasEditorRole, hasSuperadminRole, isSupabaseConfigured } from '@/lib/supabase';
 import Link from 'next/link';
+import AdminSidebar from '@/app/components/AdminSidebar';
+import BrandPerformanceDashboard from '@/app/components/BrandPerformanceDashboard';
+import BrandAdsManager from '@/app/components/BrandAdsManager';
+import MembershipTierManager from '@/app/components/MembershipTierManager';
 
 interface Article {
   id: string;
@@ -12,6 +16,8 @@ interface Article {
   content: string;
   image_url: string | null;
   video_url: string | null;
+  video_provider: string | null;
+  post_type: 'article' | 'video';
   published_at: string;
   status: 'draft' | 'published';
 }
@@ -28,7 +34,7 @@ const DEFAULT_CATEGORIES = [
 export default function AdminPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [adminAccess, setAdminAccess] = useState<'checking' | 'signed-out' | 'admin' | 'editor' | 'denied' | 'unconfigured'>(
+  const [adminAccess, setAdminAccess] = useState<'checking' | 'signed-out' | 'superadmin' | 'editor' | 'denied' | 'unconfigured'>(
     isSupabaseConfigured ? 'checking' : 'unconfigured'
   );
   const [loginEmail, setLoginEmail] = useState('');
@@ -49,6 +55,8 @@ export default function AdminPage() {
   // URL states
   const [imageUrl, setImageUrl] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
+  const [postType, setPostType] = useState<'article' | 'video'>('article');
+  const [videoProvider, setVideoProvider] = useState<'file' | 'youtube' | 'vimeo' | 'other'>('file');
 
   // File upload states
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -85,7 +93,7 @@ export default function AdminPage() {
     let isActive = true;
     const setAccessFromUser = (user: { app_metadata?: Record<string, unknown> } | null) => {
       if (!isActive) return;
-      setAdminAccess(!user ? 'signed-out' : hasAdminRole(user) ? 'admin' : hasEditorRole(user) ? 'editor' : 'denied');
+      setAdminAccess(!user ? 'signed-out' : hasSuperadminRole(user) ? 'superadmin' : hasEditorRole(user) ? 'editor' : 'denied');
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -117,7 +125,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (adminAccess !== 'admin' && adminAccess !== 'editor') return;
+    if (adminAccess !== 'superadmin' && adminAccess !== 'editor') return;
 
     let isActive = true;
     void fetchArticles()
@@ -283,10 +291,16 @@ export default function AdminPage() {
       return;
     }
 
+    if (postType === 'video' && !videoUrl.trim() && !videoFile) {
+      setMessage('Add a video URL or choose a video file before publishing a video post.');
+      return;
+    }
+
     setLoading(true);
 
     let finalImageUrl = imageUrl;
-    let finalVideoUrl = videoUrl;
+    let finalVideoUrl = postType === 'video' ? videoUrl : '';
+    let finalVideoProvider: 'file' | 'youtube' | 'vimeo' | 'other' | null = postType === 'video' ? videoProvider : null;
 
     // 1. Handle Image Upload if a file was selected
     if (imageFile) {
@@ -302,11 +316,22 @@ export default function AdminPage() {
     }
 
     // 2. Handle Video Upload if a file was selected
-    if (videoFile) {
+    if (postType === 'video' && videoFile) {
+      if (videoFile.size > 50 * 1024 * 1024) {
+        setMessage('Video files must be 50 MB or smaller.');
+        setLoading(false);
+        return;
+      }
+      if (!['video/mp4', 'video/webm'].includes(videoFile.type)) {
+        setMessage('Choose an MP4 or WebM video file.');
+        setLoading(false);
+        return;
+      }
       setUploadProgress('Uploading video file (this may take a moment)...');
       const uploadedUrl = await uploadFileToSupabase(videoFile, 'videos');
       if (uploadedUrl) {
         finalVideoUrl = uploadedUrl;
+        finalVideoProvider = 'file';
       } else {
         setMessage('Failed to upload video file.');
         setLoading(false);
@@ -326,6 +351,8 @@ export default function AdminPage() {
           content,
           image_url: finalImageUrl || null,
           video_url: finalVideoUrl || null,
+          video_provider: finalVideoUrl ? finalVideoProvider : null,
+          post_type: postType,
           status,
         })
         .eq('id', editingId);
@@ -350,6 +377,8 @@ export default function AdminPage() {
           content,
           image_url: finalImageUrl || null,
           video_url: finalVideoUrl || null,
+          video_provider: finalVideoUrl ? finalVideoProvider : null,
+          post_type: postType,
           published_at: new Date().toISOString(),
           status,
         },
@@ -392,6 +421,8 @@ export default function AdminPage() {
     setContent('');
     setImageUrl('');
     setVideoUrl('');
+    setPostType('article');
+    setVideoProvider('file');
     setImageFile(null);
     setVideoFile(null);
     setStatus('published');
@@ -405,6 +436,8 @@ export default function AdminPage() {
     setContent(article.content);
     setImageUrl(article.image_url || '');
     setVideoUrl(article.video_url || '');
+    setPostType(article.post_type || (article.video_url ? 'video' : 'article'));
+    setVideoProvider((article.video_provider as 'file' | 'youtube' | 'vimeo' | 'other' | null) || 'file');
     setStatus(article.status || 'published');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -445,7 +478,7 @@ export default function AdminPage() {
       setAdminAccess('signed-out');
     } else {
       setLoginPassword('');
-      setAdminAccess(hasAdminRole(data.user) ? 'admin' : 'editor');
+      setAdminAccess(hasSuperadminRole(data.user) ? 'superadmin' : 'editor');
     }
     setAuthLoading(false);
   };
@@ -457,7 +490,7 @@ export default function AdminPage() {
     setAdminAccess('signed-out');
   };
 
-  if (adminAccess !== 'admin' && adminAccess !== 'editor') {
+  if (adminAccess !== 'superadmin' && adminAccess !== 'editor') {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-10 text-gray-900 dark:bg-zinc-950 dark:text-zinc-100">
         <section className="w-full max-w-md space-y-5 rounded-lg border border-gray-200 bg-white p-7 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -465,7 +498,7 @@ export default function AdminPage() {
             <p className="text-xs font-semibold uppercase text-red-600">GCGL Editorial</p>
             <h1 className="mt-1 text-2xl font-bold">Administrator sign in</h1>
             <p className="mt-2 text-sm text-gray-500 dark:text-zinc-400">
-              Sign in with an account assigned the administrator or legacy editor role.
+              Sign in with an account assigned the superadmin or editor role.
             </p>
           </div>
 
@@ -549,20 +582,29 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-zinc-950 dark:text-zinc-100 p-6 md:p-12">
-      <div className="max-w-4xl mx-auto space-y-10">
+      <div id="overview" className="mx-auto max-w-4xl space-y-10">
         
         {/* Header */}
-        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-md p-8 border border-gray-200 dark:border-zinc-800 flex justify-between items-center">
+        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-md p-4 sm:p-8 border border-gray-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-4">
           <div>
+            <div className="mb-3 flex items-center gap-3">
+              <AdminSidebar role={adminAccess} />
+              <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${adminAccess === 'superadmin' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-200' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200'}`}>
+                {adminAccess === 'superadmin' ? 'Superadmin' : 'Editor'}
+              </span>
+            </div>
             <h1 className="text-2xl font-bold font-serif text-red-600">GCGL Admin Portal</h1>
             <p className="text-xs text-gray-500">Publish news, images, and video reports with storage uploads</p>
           </div>
-          <div className="flex items-center gap-2">
-            {adminAccess === 'admin' && (
+          <div className="flex flex-wrap items-center gap-2">
+            {adminAccess === 'superadmin' && (
               <Link href="/admin/epaper" className="text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200 px-3 py-1.5 rounded hover:bg-red-200 dark:hover:bg-red-900 transition">
                 E-Paper Issues
               </Link>
             )}
+            <Link href="/tv" className="text-xs font-semibold bg-gray-100 text-gray-800 dark:bg-zinc-800 dark:text-zinc-200 px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 transition">
+              GCGL TV
+            </Link>
             <Link href="/" className="text-xs font-semibold bg-gray-200 dark:bg-zinc-800 px-3 py-1.5 rounded hover:bg-gray-300 transition">
               View Live Site →
             </Link>
@@ -575,6 +617,10 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
+
+        <div id="brand-performance"><BrandPerformanceDashboard /></div>
+        {adminAccess === 'superadmin' && <div id="brand-ads"><BrandAdsManager /></div>}
+        {adminAccess === 'superadmin' && <div id="membership-tiers"><MembershipTierManager /></div>}
 
         {/* Analytics Counter Dashboard */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -663,7 +709,7 @@ export default function AdminPage() {
         </div>
 
         {/* Publish / Edit Form */}
-        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-md p-8 border border-gray-200 dark:border-zinc-800">
+        <div id="article-editor" className="bg-white dark:bg-zinc-900 rounded-xl shadow-md p-8 border border-gray-200 dark:border-zinc-800">
           <div className="flex justify-between items-center mb-6 border-b pb-4 dark:border-zinc-800">
             <h2 className="text-lg font-bold">{editingId ? 'Edit Article' : 'Create New Article'}</h2>
             {editingId && (
@@ -701,6 +747,19 @@ export default function AdminPage() {
                   {categories.map((cat) => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="post-type" className="block text-xs font-semibold uppercase mb-1">Post type</label>
+                <select
+                  id="post-type"
+                  value={postType}
+                  onChange={(event) => setPostType(event.target.value as 'article' | 'video')}
+                  className="w-full rounded-lg border p-3 text-sm dark:bg-zinc-800 dark:border-zinc-700"
+                >
+                  <option value="article">Article</option>
+                  <option value="video">Video</option>
                 </select>
               </div>
 
@@ -779,6 +838,19 @@ export default function AdminPage() {
                   placeholder="https://www.youtube.com/watch?v=xxxxxx"
                   className="w-full rounded-lg border p-2.5 text-sm dark:bg-zinc-800 dark:border-zinc-700" 
                 />
+                <label className="mt-3 block text-xs font-medium text-gray-500">
+                  Video provider
+                  <select
+                    value={videoProvider}
+                    onChange={(event) => setVideoProvider(event.target.value as 'file' | 'youtube' | 'vimeo' | 'other')}
+                    className="mt-1 w-full rounded-lg border p-2.5 text-sm dark:bg-zinc-800 dark:border-zinc-700"
+                  >
+                    <option value="file">Direct video / uploaded file</option>
+                    <option value="youtube">YouTube</option>
+                    <option value="vimeo">Vimeo</option>
+                    <option value="other">Other direct video URL</option>
+                  </select>
+                </label>
               </div>
             </div>
 
@@ -906,7 +978,7 @@ export default function AdminPage() {
         </div>
 
         {/* Article Management Table */}
-        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-md p-8 border border-gray-200 dark:border-zinc-800 space-y-6">
+        <div id="article-directory" className="bg-white dark:bg-zinc-900 rounded-xl shadow-md p-8 border border-gray-200 dark:border-zinc-800 space-y-6">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4 border-b pb-4 dark:border-zinc-800">
             <div>
               <h2 className="text-lg font-bold">Articles & Drafts Directory</h2>
@@ -969,12 +1041,14 @@ export default function AdminPage() {
                         >
                           Edit
                         </button>
-                        <button
-                          onClick={() => handleDelete(article.id)}
-                          className="text-xs bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300 px-3 py-1 rounded font-semibold hover:bg-red-100 transition"
-                        >
-                          Delete
-                        </button>
+                        {adminAccess === 'superadmin' && (
+                          <button
+                            onClick={() => handleDelete(article.id)}
+                            className="text-xs bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300 px-3 py-1 rounded font-semibold hover:bg-red-100 transition"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import BreakingNewsTicker from '@/app/components/BreakingNewsTicker';
 import TrendingStories from '@/app/components/TrendingStories';
+import BrandAdSlot from '@/app/components/BrandAdSlot';
 import { supabase } from '@/lib/supabase/client';
 
 interface CheckoutButtonProps {
@@ -232,6 +233,7 @@ export default function Home() {
               {navCategory}
             </button>
           ))}
+          <Link href="/tv" className="shrink-0 hover:text-red-600">GCGL TV</Link>
         </div>
       </nav>
 
@@ -283,6 +285,12 @@ export default function Home() {
               : articleLoadError || `Showing ${filteredArticles.length} of ${articles.length} published stories`}
           </p>
         </section>
+
+        {selectedCategory !== 'all' && (
+          <div className="mb-8">
+            <BrandAdSlot brand={selectedCategory} placement="brand_header" />
+          </div>
+        )}
 
         <section className="mb-8 rounded-2xl border border-red-200 bg-gradient-to-r from-red-50 via-white to-red-50 p-6 shadow-sm dark:border-red-900/70 dark:from-zinc-900 dark:via-zinc-950 dark:to-zinc-900">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">

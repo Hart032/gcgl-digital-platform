@@ -21,10 +21,14 @@ function getAppRole(payload: unknown): string | undefined {
 }
 
 export function hasAdminRole(payload: unknown): boolean {
+  return hasSuperadminRole(payload);
+}
+
+export function hasSuperadminRole(payload: unknown): boolean {
   return getAppRole(payload) === 'admin';
 }
 
 export function hasEditorRole(payload: unknown): boolean {
   const role = getAppRole(payload);
-  return role === 'admin' || role === 'editor';
+  return hasSuperadminRole(payload) || role === 'editor';
 }

@@ -12,6 +12,7 @@ type PublicIssue = {
   title: string;
   issue_date: string;
   edition: string;
+  brand: string;
   status: 'draft' | 'published';
 };
 
@@ -27,7 +28,7 @@ export default async function EpaperReaderPage({ params }: EpaperReaderProps) {
 
   let issueQuery = supabase
     .from('epaper_issues')
-    .select('id, title, issue_date, edition, status')
+    .select('id, title, issue_date, edition, brand, status')
     .eq('id', id);
   if (!isAdmin) issueQuery = issueQuery.eq('status', 'published');
 
@@ -75,7 +76,7 @@ export default async function EpaperReaderPage({ params }: EpaperReaderProps) {
             <Link href="/epaper" className="text-xs font-semibold text-red-700 hover:text-red-800 dark:text-red-400">← All editions</Link>
             <h1 className="mt-2 truncate font-serif text-2xl font-bold sm:text-3xl">{issue.title}</h1>
             <p className="mt-1 text-sm text-gray-500 dark:text-zinc-400">
-              {issue.edition} <span aria-hidden="true">·</span> {new Date(`${issue.issue_date}T00:00:00`).toLocaleDateString('en-GH', { day: 'numeric', month: 'long', year: 'numeric' })}
+              {issue.brand} <span aria-hidden="true">·</span> {issue.edition} <span aria-hidden="true">·</span> {new Date(`${issue.issue_date}T00:00:00`).toLocaleDateString('en-GH', { day: 'numeric', month: 'long', year: 'numeric' })}
             </p>
           </div>
           <Link href="/dashboard" className="shrink-0 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold transition hover:border-gray-400 dark:border-zinc-700 dark:bg-zinc-900">

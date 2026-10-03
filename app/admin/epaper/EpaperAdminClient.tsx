@@ -12,6 +12,7 @@ type EpaperIssue = {
   title: string;
   issue_date: string;
   edition: string;
+  brand: string;
   cover_image_url: string | null;
   pdf_storage_path: string;
   status: IssueStatus;
@@ -19,6 +20,7 @@ type EpaperIssue = {
 };
 
 const MAX_PDF_SIZE = 100 * 1024 * 1024;
+const BRANDS = ['Daily Graphic', 'The Mirror', 'Graphic Showbiz', 'Graphic Sports', 'Graphic Business', 'Junior Graphic'];
 const inputClassName = 'mt-2 w-full rounded-lg border border-gray-300 bg-white px-3.5 py-3 text-sm outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 dark:border-zinc-700 dark:bg-zinc-950';
 
 export default function EpaperAdminClient() {
@@ -28,6 +30,7 @@ export default function EpaperAdminClient() {
   const [busyIssueId, setBusyIssueId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [edition, setEdition] = useState('Ghana');
+  const [brand, setBrand] = useState(BRANDS[0]);
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [coverImageUrl, setCoverImageUrl] = useState('');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -41,7 +44,7 @@ export default function EpaperAdminClient() {
     let isActive = true;
     void client
       .from('epaper_issues')
-      .select('id, title, issue_date, edition, cover_image_url, pdf_storage_path, status, created_at')
+      .select('id, title, issue_date, edition, brand, cover_image_url, pdf_storage_path, status, created_at')
       .order('issue_date', { ascending: false })
       .limit(100)
       .then(({ data, error }) => {
@@ -90,13 +93,14 @@ export default function EpaperAdminClient() {
           id: issueId,
           title: title.trim(),
           edition: edition.trim(),
+          brand,
           issue_date: issueDate,
           cover_image_url: coverImageUrl.trim() || null,
           pdf_storage_path: objectPath,
           status: publishNow ? 'published' : 'draft',
           published_at: publishNow ? new Date().toISOString() : null,
         })
-        .select('id, title, issue_date, edition, cover_image_url, pdf_storage_path, status, created_at')
+        .select('id, title, issue_date, edition, brand, cover_image_url, pdf_storage_path, status, created_at')
         .single();
 
       if (insertError) {
@@ -107,6 +111,7 @@ export default function EpaperAdminClient() {
       setIssues((current) => [data as EpaperIssue, ...current].sort((a, b) => b.issue_date.localeCompare(a.issue_date)));
       setTitle('');
       setEdition('Ghana');
+      setBrand(BRANDS[0]);
       setIssueDate(new Date().toISOString().slice(0, 10));
       setCoverImageUrl('');
       setPdfFile(null);
@@ -130,7 +135,7 @@ export default function EpaperAdminClient() {
       .from('epaper_issues')
       .update({ status: nextStatus, published_at: nextStatus === 'published' ? new Date().toISOString() : null })
       .eq('id', issue.id)
-      .select('id, title, issue_date, edition, cover_image_url, pdf_storage_path, status, created_at')
+      .select('id, title, issue_date, edition, brand, cover_image_url, pdf_storage_path, status, created_at')
       .single();
 
     setBusyIssueId(null);
@@ -198,6 +203,12 @@ export default function EpaperAdminClient() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block text-sm font-semibold">
+                Brand
+                <select required value={brand} onChange={(event) => setBrand(event.target.value)} className={inputClassName}>
+                  {BRANDS.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm font-semibold">
                 Edition
                 <input required maxLength={80} value={edition} onChange={(event) => setEdition(event.target.value)} className={inputClassName} />
               </label>
@@ -252,7 +263,7 @@ export default function EpaperAdminClient() {
                       </div>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold">{issue.title}</p>
-                        <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">{issue.edition} · {new Date(`${issue.issue_date}T00:00:00`).toLocaleDateString()}</p>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">{issue.brand} · {issue.edition} · {new Date(`${issue.issue_date}T00:00:00`).toLocaleDateString()}</p>
                         <span className={`mt-1 inline-flex rounded px-2 py-0.5 text-[10px] font-bold uppercase ${issue.status === 'published' ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200' : 'bg-amber-50 text-amber-800 dark:bg-amber-950/70 dark:text-amber-200'}`}>{issue.status}</span>
                       </div>
                     </div>

@@ -30,7 +30,7 @@ export async function GET() {
 
   const { data: profile, error: profileError } = await authorization.client
     .from('profiles')
-    .select('user_id, full_name, phone, region, updated_at')
+    .select('user_id, full_name, phone, region, membership_tier, updated_at')
     .eq('user_id', authorization.userId)
     .maybeSingle();
 
@@ -70,7 +70,7 @@ export async function PATCH(request: Request) {
     .from('profiles')
     .update(updates)
     .eq('user_id', authorization.userId)
-    .select('user_id, full_name, phone, region, updated_at')
+    .select('user_id, full_name, phone, region, membership_tier, updated_at')
     .single();
 
   if (error) {

@@ -7,6 +7,7 @@ type EpaperIssue = {
   title: string;
   issue_date: string;
   edition: string;
+  brand: string;
   cover_image_url: string | null;
 };
 
@@ -18,7 +19,7 @@ export default async function EpaperArchivePage() {
 
   const { data, error } = await supabase
     .from('epaper_issues')
-    .select('id, title, issue_date, edition, cover_image_url')
+    .select('id, title, issue_date, edition, brand, cover_image_url')
     .eq('status', 'published')
     .order('issue_date', { ascending: false })
     .limit(48);
@@ -58,13 +59,14 @@ export default async function EpaperArchivePage() {
                     <Image src={issue.cover_image_url} alt={`${issue.title} cover`} fill unoptimized sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" className="object-cover transition duration-300 group-hover:scale-[1.02]" />
                   ) : (
                     <div className="flex h-full flex-col justify-between bg-[linear-gradient(145deg,#7f1d1d_0%,#450a0a_70%,#18181b_100%)] p-4 text-white sm:p-5">
-                      <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-100">{issue.edition}</span>
+                      <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-100">{issue.brand} · {issue.edition}</span>
                       <span className="font-serif text-xl font-bold leading-tight sm:text-2xl">{issue.title}</span>
                     </div>
                   )}
                 </div>
                 <div className="p-3 sm:p-4">
                   <p className="truncate text-sm font-bold group-hover:text-red-700 dark:group-hover:text-red-400">{issue.title}</p>
+                  <p className="truncate text-xs text-gray-500 dark:text-zinc-400">{issue.brand} · {issue.edition}</p>
                   <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">
                     {new Date(`${issue.issue_date}T00:00:00`).toLocaleDateString('en-GH', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </p>

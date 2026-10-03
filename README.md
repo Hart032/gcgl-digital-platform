@@ -46,7 +46,8 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 	where id = 'USER_UUID';
 	```
 
-	Replace `USER_UUID` with the intended account's Auth user ID, and have that user sign out and back in so their JWT receives the updated role. `/admin` accepts `admin` or `editor`; `/api/admin/*` requires the stricter `admin` role.
+	Replace `USER_UUID` with the intended account's Auth user ID, and have that user sign out and back in so their JWT receives the updated role. Use `{"role":"admin"}` for a superadmin or `{"role":"editor"}` for an editor; `/api/admin/*` requires the admin role.
+	For this app, the trusted `admin` role is the **superadmin** tier; `editor` is the standard editorial tier. Editors can create, edit, and publish content, but cannot delete articles, manage ad campaigns, change membership tiers, manage subscribers, or administer E-Paper issues. Superadmin-only actions are enforced both in server routes and RLS, not just hidden in the UI. The RBAC hardening migration adds the database-side restrictions. Never grant either role through user-editable metadata or a client-side form.
 3. Authenticate the CLI, identify the project ref, then link it. `npx supabase login` prompts for a Supabase personal access token from the dashboard's Account → Access Tokens page; enter it in the terminal, not in chat. `npx supabase projects list` shows projects available to that token. The project ref is also the subdomain in the Supabase URL.
 
 	```bash
@@ -65,10 +66,18 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 	The RBAC migration creates owner-scoped `profiles` and `subscriptions` tables, defaults new users to the registered role, and limits subscriber-record management to admins. Ordinary users can update only their own profile fields. The `/api/profile` route enforces this contract; `/api/admin/profiles/*` requires an admin claim. Existing paid status must be populated from a trusted payment record by an administrator; the migration does not trust editable user metadata as proof of payment.
 5. The migration assumes the project already has the `public.articles` table and its `status` column. The current image/video rendering uses public Storage URLs. Keep the `media` bucket public only if its contents are intended to be publicly retrievable; private draft media needs signed-URL handling before making that bucket private.
 
-The policy tests are `supabase/tests/articles_rls_test.sql` and `supabase/tests/rbac_profiles_rls_test.sql`. Local tests require Docker Desktop/Podman and a local schema containing `public.articles`; start the stack with `npx supabase start`, then run `npx supabase test db`. Docker is not required for the remote `db push` workflow. `.env.local` is ignored by Git; keep its values private.
+The policy tests are `supabase/tests/articles_rls_test.sql` and `supabase/tests/rbac_profiles_rls_test.sql`. Local tests require Docker Desktop/Podman and a local schema containing `public.articles`; start the stack with `npx supabase start`, then run `npx supabase db test --local`. Docker is not required for the remote `db push` workflow. `.env.local` is ignored by Git; keep its values private.
 
 ## E-Paper
 
 Published editions are listed at `/epaper`; administrators upload, publish, unpublish, and remove issues at `/admin/epaper`. PDFs are stored in the private `epaper` bucket, limited to 100 MB, and served with a 30-minute signed URL. The database and Storage policies require an active subscription for published PDFs; admins can preview drafts. Access follows `subscriptions.status` and `next_renewal_at`, so a trusted payment process or administrator must mark a paid account active.
 
-The E-Paper policy test is `supabase/tests/epaper_issues_rls_test.sql`. It runs with `npx supabase test db` when the local stack has pgTAP enabled.
+The E-Paper policy test is `supabase/tests/epaper_issues_rls_test.sql`. It runs with `npx supabase db test --local` when the local stack has pgTAP enabled.
+
+## Reader and Brand Features
+
+Apply `supabase/migrations/20261003044447_add_brand_membership_and_video_features.sql` after reviewing it for your project. It adds the `Gold`, `Silver`, and `Diamond` profile tier field with admin-only assignment, post type and video provider metadata, a brand label for E-Paper issues, active campaign ads with staff-only management, a category performance view, and comment policies that limit public reads to comments on published articles. Existing E-Paper rows receive the default brand `Daily Graphic`; update any rows that belong to another brand after migration.
+
+The E-Paper admin form uses the canonical brand choices. Admins assign membership tiers in the admin portal; member dashboards show a tier but cannot change it. Article/video posts are managed in `/admin`, and published video posts are listed at `/tv`. The admin portal also manages ad drafts and exposes article lifetime views and comment counts by category; ad slots render when a matching brand category is selected on the homepage. `BackToTop` is included by the root layout.
+
+Run the policy tests against the local database with `npx supabase db test --local`. Build and lint checks are `npm run build` and `npm run lint`.

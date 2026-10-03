@@ -10,7 +10,7 @@ export async function GET() {
   const [profilesResult, subscriptionsResult] = await Promise.all([
     authorization.client
       .from('profiles')
-      .select('user_id, full_name, phone, region, updated_at')
+      .select('user_id, full_name, phone, region, membership_tier, updated_at')
       .order('updated_at', { ascending: false })
       .limit(100),
     authorization.client

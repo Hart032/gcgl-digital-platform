@@ -6,7 +6,8 @@ interface RouteContext {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const PROFILE_FIELDS = ['full_name', 'phone', 'region'] as const;
+const PROFILE_FIELDS = ['full_name', 'phone', 'region', 'membership_tier'] as const;
+const MEMBERSHIP_TIERS = ['Gold', 'Silver', 'Diamond'] as const;
 const SUBSCRIPTION_PLANS = ['Premium Monthly', 'Premium Annual', 'Family Bundle'] as const;
 const SUBSCRIPTION_STATUSES = ['inactive', 'active', 'paused', 'cancelled'] as const;
 
@@ -47,17 +48,29 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     const entries = Object.entries(value);
     if (
       entries.length === 0 ||
-      entries.some(([key, fieldValue]) => !PROFILE_FIELDS.includes(key as (typeof PROFILE_FIELDS)[number]) || typeof fieldValue !== 'string' || fieldValue.length > 160)
+      entries.some(([key, fieldValue]) => {
+        if (!PROFILE_FIELDS.includes(key as (typeof PROFILE_FIELDS)[number])) return true;
+        if (key === 'membership_tier') {
+          return fieldValue !== null && (
+            typeof fieldValue !== 'string' ||
+            !MEMBERSHIP_TIERS.includes(fieldValue as (typeof MEMBERSHIP_TIERS)[number])
+          );
+        }
+        return typeof fieldValue !== 'string' || fieldValue.length > 160;
+      })
     ) {
       return NextResponse.json({ error: 'Provide valid profile fields only.' }, { status: 400 });
     }
 
-    const updates = Object.fromEntries(entries.map(([key, fieldValue]) => [key, (fieldValue as string).trim()]));
+    const updates = Object.fromEntries(entries.map(([key, fieldValue]) => [
+      key,
+      key === 'membership_tier' ? fieldValue : (fieldValue as string).trim(),
+    ]));
     const { data, error } = await authorization.client
       .from('profiles')
       .update(updates)
       .eq('user_id', userId)
-      .select('user_id, full_name, phone, region, updated_at')
+      .select('user_id, full_name, phone, region, membership_tier, updated_at')
       .maybeSingle();
 
     if (error) {
